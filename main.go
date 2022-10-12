@@ -237,11 +237,7 @@ func isType(fileMap map[int]string, index int, res *[]string) int {
 	return temp[len(temp)-1] + 1
 }
 
-var typeMap = map[string]string{
-	"VenunInfo":  "xutil.VenunInfo",
-	"XtCard":     "xutil.XtCard",
-	"XtTypeDeck": "xutil.XtTypeDeck",
-}
+var typeMap = map[string]string{}
 
 var enumList [][3]string
 
