@@ -58,6 +58,7 @@ func main() {
 			}
 			for _, line := range strings.Split(string(data), "\n") {
 				line = strings.ReplaceAll(line, "\t", " ")
+				line = strings.ReplaceAll(line, "\r", " ")
 				counts[count] = line
 				count++
 			}
@@ -74,26 +75,35 @@ func search(fileMap map[int]string) []string {
 
 	for index < len(fileMap) {
 		file := fileMap[index]
-		temp := strings.ReplaceAll(file, "\t", " ")
-		if len(temp) > 2 && temp[0:2] == "//" {
-			res = append(res, file)
-			index++
-		} else {
-			switch {
-			case strings.Contains(file, "#define"):
-				index = isDefine(fileMap, index)
-			case strings.Contains(file, "enum"):
-				index = isEnum(fileMap, index+2)
-			case strings.Contains(file, "struct"), strings.Contains(file, "class"):
-				if !strings.Contains(file, ";") {
-					index = isType(fileMap, index, &res)
-				} else {
-					index++
+
+		hasAnotation, nextIndex := filterAnotation(fileMap, index)
+
+		if hasAnotation {
+			for i := index; i < nextIndex; i++ {
+				if strings.Contains(fileMap[i], "if") {
+					continue
 				}
-			default:
+				res = append(res, fileMap[i])
+			}
+			file = fileMap[nextIndex]
+			index = nextIndex
+		}
+
+		switch {
+		case strings.Contains(file, "#define"):
+			index = isDefine(fileMap, index)
+		case strings.Contains(file, "enum"):
+			index = isEnum(fileMap, index+2)
+		case strings.Contains(file, "struct"), strings.Contains(file, "class"):
+			if !strings.Contains(file, ";") {
+				index = isType(fileMap, index)
+			} else {
 				index++
 			}
+		default:
+			index++
 		}
+
 	}
 
 	if len(enumList) > 0 {
@@ -130,22 +140,87 @@ func search(fileMap map[int]string) []string {
 		iotaListList = []IotaStru{}
 	}
 
+	if len(typeList) > 0 {
+		for _, typeStruct := range typeList {
+
+			res = append(res, fmt.Sprintf("type %s struct {", typeStruct.structName))
+
+			for _, field := range typeStruct.attributeList {
+
+				res = append(res, fmt.Sprintf("%s %s %s", field[0], field[1], field[2]))
+			}
+			res = append(res, "}")
+		}
+		typeList = []TypeStruct{}
+	}
+
 	return res
 }
 
-func isType(fileMap map[int]string, index int, res *[]string) int {
+func filterAnotation(fileMap map[int]string, index int) (hasAnotation bool, nextLine int) {
+
+	nextLine = index
+	var anotations bool
+	for {
+		temp, ok := fileMap[nextLine]
+		if !ok {
+			break
+		}
+		temp = strings.ReplaceAll(temp, " ", "")
+		if anotations {
+			nextLine++
+			if len(temp) >= 2 && strings.Contains(temp, "*/") {
+				anotations = false
+				continue
+			}
+			continue
+		}
+		if temp == "" {
+			hasAnotation = true
+			nextLine++
+			continue
+		}
+		if strings.Contains(temp, "if") {
+			hasAnotation = true
+			nextLine++
+			continue
+		}
+		if len(temp) >= 2 && temp[0:2] == "//" {
+			hasAnotation = true
+			nextLine++
+			continue
+		}
+		if len(temp) >= 2 && temp[0:2] == "/*" {
+			nextLine++
+			if len(temp) >= 3 && strings.Contains(temp, "*/") {
+				continue
+			}
+			anotations = true
+			hasAnotation = true
+			continue
+		}
+		break
+	}
+
+	return
+}
+
+func isType(fileMap map[int]string, index int) int {
 
 	var temp []int
+	left, right = 0, 0
 	index = dfs(fileMap, index, &temp)
 	if temp == nil {
 		return index
 	}
 	var nameList string
 
-	if len(fileMap[temp[0]]) > 7 {
+	t := strings.ReplaceAll(fileMap[temp[0]], " ", "")
+	if len(t) > 7 {
 		nameList = strings.ReplaceAll(fileMap[temp[0]], "{", "")
 	} else {
-		if len(fileMap[temp[len(temp)-1]]) > 3 {
+		t = strings.ReplaceAll(fileMap[temp[len(temp)-1]], " ", "")
+		if len(t) > 3 {
 			nameList = fileMap[temp[len(temp)-1]]
 		} else {
 			nameList = fileMap[temp[0]-1]
@@ -164,8 +239,8 @@ func isType(fileMap map[int]string, index int, res *[]string) int {
 			}
 		}
 	}
-	*res = append(*res, fmt.Sprintf("type %s struct{", strings.ReplaceAll(name, "\r", "")))
-
+	var typeStruct TypeStruct
+	typeStruct.structName = name
 	var flag bool
 	for i := temp[0] + 1; i < temp[len(temp)-1]; i++ {
 
@@ -183,11 +258,43 @@ func isType(fileMap map[int]string, index int, res *[]string) int {
 		}
 
 		file := fileMap[i]
+
+		hasAnotation, nextIndex := filterAnotation(fileMap, i)
+
+		if hasAnotation {
+
+			for j := i; j < nextIndex; j++ {
+				if strings.Contains(fileMap[j], "if") {
+					continue
+				}
+				typeStruct.attributeList = append(typeStruct.attributeList, [3]string{"", "", fileMap[j]})
+			}
+
+			file = fileMap[nextIndex]
+			i = nextIndex
+		}
+
+		if strings.Contains(file, "struct") {
+			i = isType(fileMap, i)
+			file = fileMap[i]
+		}
+
+		if strings.Contains(file, "enum") {
+			i = isEnum(fileMap, i+2)
+			file = fileMap[i]
+		}
+
 		if strings.Contains(file, "(") {
 			var t []int
 			dfs2(fileMap, i, &t)
 			i = t[1]
 			continue
+		}
+		var oldAttribute string
+		if strings.Contains(file, "=") {
+			oldAttribute = "//" + file
+			IndexRune := strings.IndexRune(file, '=')
+			file = file[:IndexRune]
 		}
 
 		l, annotation, _ := toList(file)
@@ -228,18 +335,27 @@ func isType(fileMap map[int]string, index int, res *[]string) int {
 		}
 		if name == "type" {
 			name = "type_"
-			*res = append(*res, fmt.Sprintf("%s %s  `json:\"type\"` %s", name, type_, annotation))
+			typeStruct.attributeList = append(typeStruct.attributeList, [3]string{name, type_, fmt.Sprintf(" `json:\"type\"` %s %s", annotation, oldAttribute)})
 		} else {
-			*res = append(*res, fmt.Sprintf("%s %s %s", name, type_, annotation))
+			typeStruct.attributeList = append(typeStruct.attributeList, [3]string{name, type_, fmt.Sprintf("%s %s", annotation, oldAttribute)})
 		}
 	}
-	*res = append(*res, "}")
+	typeList = append(typeList, typeStruct)
 	return temp[len(temp)-1] + 1
 }
 
 var typeMap = map[string]string{}
 
 var enumList [][3]string
+
+var iotaListList []IotaStru
+
+var typeList []TypeStruct
+
+type TypeStruct struct {
+	structName    string
+	attributeList [][3]string
+}
 
 func isDefine(fileList map[int]string, index int) int {
 	l, annotation, _ := toList(fileList[index])
@@ -248,8 +364,6 @@ func isDefine(fileList map[int]string, index int) int {
 	}
 	return index + 1
 }
-
-var iotaListList []IotaStru
 
 type IotaStru struct {
 	isNewType   bool
@@ -282,7 +396,6 @@ func isEnum(fileMap map[int]string, index int) int {
 		iotaStru.isNewType = true
 		iotaStru.newTypeName = strings.ReplaceAll(fileMap[index], "}", "")
 		iotaStru.newTypeName = strings.ReplaceAll(iotaStru.newTypeName, ";", "")
-		iotaStru.newTypeName = strings.ReplaceAll(iotaStru.newTypeName, "\r", "")
 	}
 
 	if len(iotaStru.iotaList) > 0 {
@@ -297,8 +410,6 @@ func isEnum(fileMap map[int]string, index int) int {
 }
 
 func toList(line string) ([]string, string, string) {
-
-	line = strings.ReplaceAll(line, "\r", "")
 
 	var strList []string
 	var annotation string
@@ -335,8 +446,7 @@ func typeJudge(argStr string) string {
 	}
 
 	switch {
-
-	case strings.Contains(argStr, "int") && !isCompoundType, strings.Contains(argStr, "INT64") && !isCompoundType:
+	case strings.Contains(argStr, "int") && !isCompoundType, strings.Contains(argStr, "INT64") && !isCompoundType, strings.Contains(argStr, "long") && !isCompoundType:
 		return "int"
 	case strings.Contains(argStr, "string") && !isCompoundType:
 		return "string"
@@ -369,20 +479,33 @@ func typeJudge(argStr string) string {
 
 }
 
-func dfs(file map[int]string, start int, res *[]int) int {
+var left, right int
+
+func dfs(fileMap map[int]string, start int, res *[]int) int {
 
 	for {
-		if start > len(file) {
+		if start > len(fileMap) {
 			return 0
 		}
-		if strings.ContainsRune(file[start], '{') {
+		hasAnotation, nextIndex := filterAnotation(fileMap, start)
+		if hasAnotation {
+			start = nextIndex
+		}
+		if strings.ContainsRune(fileMap[start], '{') {
+			left++
 			*res = append(*res, start)
-			start = dfs(file, start+1, res)
-			if len(*res)%2 == 0 {
+			if strings.Contains(fileMap[start], "}") {
+				start++
+				right++
+				continue
+			}
+			start = dfs(fileMap, start+1, res)
+			if left == right {
 				return start + 1
 			}
 			continue
-		} else if strings.ContainsRune(file[start], '}') {
+		} else if strings.ContainsRune(fileMap[start], '}') {
+			right++
 			*res = append(*res, start)
 			return start + 1
 		}

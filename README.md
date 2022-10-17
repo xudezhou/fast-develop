@@ -9,7 +9,7 @@ go 1.16
 
 go run main.go [input file] [output file]
 
-//D:\GOProject\c++\Z D:\Z\T\struct
+//go run main.go D:\GOProject\c++\Z D:\Z\T\struct
 
 ###### #####V1.0.0 版本内容更新
 
