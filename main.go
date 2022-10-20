@@ -33,7 +33,10 @@ func write(typeList []string, outputName string) {
 }
 
 func main() {
+	c2g()
+}
 
+func c2g() {
 	if len(os.Args) != 3 {
 		fmt.Println("参数错误")
 		return
@@ -94,7 +97,7 @@ func search(fileMap map[int]string) []string {
 			index = isDefine(fileMap, index)
 		case strings.Contains(file, "enum"):
 			index = isEnum(fileMap, index+2)
-		case strings.Contains(file, "struct"), strings.Contains(file, "class"):
+		case (strings.Contains(file, "struct") || strings.Contains(file, "class")) && !strings.Contains(file, "("):
 			if !strings.Contains(file, ";") {
 				index = isType(fileMap, index)
 			} else {
@@ -113,6 +116,7 @@ func search(fileMap map[int]string) []string {
 		}
 		res = append(res, ")")
 		enumList = [][3]string{}
+		res = append(res, "")
 	}
 
 	if len(iotaListList) > 0 {
@@ -136,6 +140,7 @@ func search(fileMap map[int]string) []string {
 				}
 			}
 			res = append(res, ")")
+			res = append(res, "")
 		}
 		iotaListList = []IotaStru{}
 	}
@@ -150,6 +155,7 @@ func search(fileMap map[int]string) []string {
 				res = append(res, fmt.Sprintf("%s %s %s", field[0], field[1], field[2]))
 			}
 			res = append(res, "}")
+			res = append(res, "")
 		}
 		typeList = []TypeStruct{}
 	}
@@ -274,7 +280,7 @@ func isType(fileMap map[int]string, index int) int {
 			i = nextIndex
 		}
 
-		if strings.Contains(file, "struct") {
+		if strings.Contains(file, "struct") && !strings.Contains(file, "(") {
 			i = isType(fileMap, i)
 			file = fileMap[i]
 		}
@@ -340,6 +346,7 @@ func isType(fileMap map[int]string, index int) int {
 			typeStruct.attributeList = append(typeStruct.attributeList, [3]string{name, type_, fmt.Sprintf("%s %s", annotation, oldAttribute)})
 		}
 	}
+
 	typeList = append(typeList, typeStruct)
 	return temp[len(temp)-1] + 1
 }
@@ -432,6 +439,12 @@ func toList(line string) ([]string, string, string) {
 	return strList, annotation, line
 }
 
+const (
+	isSet = iota
+	isMap
+	isSlice
+)
+
 func typeJudge(argStr string) string {
 
 	argStr = strings.ReplaceAll(argStr, " ", "")
@@ -441,8 +454,23 @@ func typeJudge(argStr string) string {
 	}
 
 	var isCompoundType bool
-	if strings.Contains(argStr, "map") || strings.Contains(argStr, "vector") {
+	var dataType = len(argStr)
+
+	if strings.Contains(argStr, "map") || strings.Contains(argStr, "vector") || strings.Contains(argStr, "set") {
 		isCompoundType = true
+		indexOfMap := strings.Index(argStr, "map")
+		indexOfList := strings.Index(argStr, "vector")
+		indexOfSet := strings.Index(argStr, "set")
+
+		if indexOfMap != -1 && indexOfMap < dataType {
+			dataType = isMap
+		}
+		if indexOfList != -1 && indexOfList < dataType {
+			dataType = isSlice
+		}
+		if indexOfSet != -1 && indexOfSet < dataType {
+			dataType = isSet
+		}
 	}
 
 	switch {
@@ -456,17 +484,19 @@ func typeJudge(argStr string) string {
 		return "float64"
 	case strings.Contains(argStr, "bool") && !isCompoundType:
 		return "bool"
-	case strings.Contains(argStr, "map"):
+	case strings.Contains(argStr, "set") && dataType == isSet:
+		firstIndex := strings.IndexRune(argStr, '<')
+		lastIndex := strings.LastIndexByte(argStr, '>')
+		return fmt.Sprintf("map[%s]struct{}", typeJudge(argStr[firstIndex+1:lastIndex]))
+	case strings.Contains(argStr, "map") && dataType == isMap:
 		firstIndex := strings.IndexRune(argStr, '<')
 		secondIndex := strings.IndexRune(argStr, ',')
 		lastIndex := strings.LastIndexByte(argStr, '>')
 		return fmt.Sprintf("map[%s]%s", typeJudge(argStr[firstIndex+1:secondIndex]), typeJudge(argStr[secondIndex+1:lastIndex]))
-	case strings.Contains(argStr, "vector"):
-		{
-			firstIndex := strings.IndexRune(argStr, '<')
-			lastIndex := strings.LastIndexByte(argStr, '>')
-			return "[]" + typeJudge(argStr[firstIndex+1:lastIndex])
-		}
+	case strings.Contains(argStr, "vector") && dataType == isSlice:
+		firstIndex := strings.IndexRune(argStr, '<')
+		lastIndex := strings.LastIndexByte(argStr, '>')
+		return "[]" + typeJudge(argStr[firstIndex+1:lastIndex])
 	default:
 		if strings.Contains(argStr, "*") {
 			argStr = "*" + strings.ReplaceAll(argStr, "*", "")
