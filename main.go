@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"github.com/gocpp/glog"
 	"io/ioutil"
@@ -36,13 +37,30 @@ func main() {
 	c2g()
 }
 
+type Param struct {
+	inputPath  string
+	outputPath string
+	json       bool
+	hump       bool
+}
+
+var p Param
+
+func init() {
+	flag.StringVar(&p.inputPath, "i", "", "a")
+	flag.StringVar(&p.outputPath, "o", "", "a")
+	flag.BoolVar(&p.json, "j", false, "a")
+	flag.BoolVar(&p.hump, "h", false, "a")
+	flag.Parse()
+}
+
 func c2g() {
-	if len(os.Args) != 3 {
-		fmt.Println("参数错误")
-		return
+
+	if p.inputPath == "" || p.outputPath == "" {
+		glog.Fatalln("inputPath or outputPath is empty")
 	}
 
-	files, _ := ioutil.ReadDir(os.Args[1])
+	files, _ := ioutil.ReadDir(p.inputPath)
 	for _, f := range files {
 
 		defer glog.CatchException()
@@ -54,7 +72,7 @@ func c2g() {
 			fmt.Println(f.Name())
 			counts := make(map[int]string)
 			var count int
-			data, err := ioutil.ReadFile(os.Args[1] + "/" + f.Name())
+			data, err := ioutil.ReadFile(p.inputPath + "/" + f.Name())
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "dup3: %v\n", err)
 				continue
@@ -65,7 +83,7 @@ func c2g() {
 				counts[count] = line
 				count++
 			}
-			write(search(counts), os.Args[2]+"/"+f.Name()[:len(f.Name())-2])
+			write(search(counts), p.outputPath+"/"+f.Name()[:len(f.Name())-2])
 		}
 	}
 }
@@ -336,14 +354,37 @@ func isType(fileMap map[int]string, index int) int {
 			}
 		}
 
+		var oldName = name
+
+		if p.hump {
+
+			for j := 0; j < len(name); j++ {
+				if name[j] == '_' && j+1 < len(name) && name[j+1] >= 'a' && name[j+1] <= 'z' {
+					name = name[:j+1] + string(name[j+1]-32) + name[j+2:]
+				}
+			}
+			name = strings.ReplaceAll(name, "_", "")
+		}
+
+		if p.json {
+			if len(name) > 0 && name[0] >= 'a' && name[0] <= 'z' {
+				name = strings.ToUpper(name[:1]) + name[1:]
+			}
+		}
+
 		if flag2 {
 			type_ = "*" + type_
 		}
+
 		if name == "type" {
-			name = "type_"
+			name = "Type"
 			typeStruct.attributeList = append(typeStruct.attributeList, [3]string{name, type_, fmt.Sprintf(" `json:\"type\"` %s %s", annotation, oldAttribute)})
 		} else {
-			typeStruct.attributeList = append(typeStruct.attributeList, [3]string{name, type_, fmt.Sprintf("%s %s", annotation, oldAttribute)})
+			if p.json {
+				typeStruct.attributeList = append(typeStruct.attributeList, [3]string{name, type_, fmt.Sprintf(" `json:\"%s\"` %s %s", oldName, annotation, oldAttribute)})
+			} else {
+				typeStruct.attributeList = append(typeStruct.attributeList, [3]string{name, type_, fmt.Sprintf(" %s %s", annotation, oldAttribute)})
+			}
 		}
 	}
 

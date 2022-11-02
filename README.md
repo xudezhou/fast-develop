@@ -7,9 +7,16 @@ go 1.16
 
 ###### #####部署步骤
 
-go run main.go [input file] [output file]
+go run main.go -i "D:\GOProject\c++\Z" -o "D:\Z\T\struct" -j=true -h=true
 
-//go run main.go D:\GOProject\c++\Z D:\Z\T\struct
+-i 指定输入文件夹
+
+-o 指定输出文件夹
+
+-j 是否生成json标签(使用则首字母默认大写)
+
+-h 是否使用驼峰命名
+
 
 ###### #####V1.0.0 版本内容更新
 
